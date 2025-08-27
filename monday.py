@@ -14,6 +14,7 @@ from typing import List, Optional
 API_KEY = ""
 API_URL = "https://api.monday.com/v2"
 BOARD_NAME = ""
+QUERY_LIMIT = 25
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 # -------------------------------
@@ -91,27 +92,52 @@ class MondayClient():
         data = response.json()
         if 'errors' in data:
             raise Exception(data)
-        return data['data']
+        return data.get('data')
     
-    def get_board(self, board_name: str) -> Optional[Board]:
+    def get_board_id(self, board_name: str) -> Optional[str]:
         """
-        Fetch a board by name.
+        Fetch the ID of a board by its name.
 
         Args:
-            board_name (str): Name of the board to retrieve.
+            board_name (str): The name of the board to search for.
 
         Returns:
-            Optional[Board]: Board object if found, else None.
+            Optional[str]: The ID of the board if found, otherwise None.
         """
-        query = '{ boards { id name columns { id title } } }'
-        data = self.post_query(query)
+        page = 1
+        while True:
+            query = f'{{ boards (limit: {QUERY_LIMIT}, page: {page}) {{ id name }} }}'
+            data = self.post_query(query)
+            boards = data.get('boards', [])
 
-        for board_dict in data['boards']:
-            if board_dict['name'] == board_name:
-                columns = [Column(column['id'], column['title']) for column in board_dict['columns']]
-                return Board(board_dict['id'], board_name, columns)
+            for board_dict in boards:
+                if board_dict.get('name') == board_name:
+                    return board_dict.get('id')
+            
+            if len(boards) < QUERY_LIMIT:
+                return None
+            page += 1
+
+    def get_board(self, board_id: str) -> Optional[Board]:
+        """
+        Fetch a board by ID.
+
+        Args:
+            board_id (str): The ID of the board to retrieve.
+
+        Returns:
+            Optional[Board]: A Board object if found, otherwise None.
+        """
+        query = f'{{ boards (ids: {board_id}) {{ name columns {{ id title }} }} }}'
+        data = self.post_query(query)
+        boards = data.get('boards', [])
+
+        if len(boards):
+            board_dict = boards[0]
+            columns = [Column(column.get('id'), column.get('title')) for column in board_dict.get('columns', [])]
+            return Board(board_id, board_dict.get('name'), columns)
         return None
-    
+
     def get_items(self, board: Board):
         """
         Load items for a board and store them in the board object.
@@ -119,13 +145,25 @@ class MondayClient():
         Args:
             board (Board): The board to populate with items.
         """
-        query = f'{{ boards (ids: {board.id}) {{ items_page {{ items {{ id name column_values {{ id text }} }} }} }} }}'
-        data = self.post_query(query)
+        cursor = None
+        while True:
+            if cursor:
+                query = f'{{ next_items_page (limit: {QUERY_LIMIT}, cursor: \"{cursor}\") {{ cursor items {{ id name column_values {{ id text }} }} }} }}'
+                data = self.post_query(query)
+                items_page = data.get('next_items_page', {})
+            else:
+                query = f'{{ boards (ids: {board.id}) {{ items_page (limit: {QUERY_LIMIT}) {{ cursor items {{ id name column_values {{ id text }} }} }} }} }}'
+                data = self.post_query(query)
+                items_page = data.get('boards', [])[0].get('items_page', {})
 
-        items = data['boards'][0]['items_page']['items']
-        for item in items:
-            values = {column['id']: column['text'] for column in item['column_values']} | {"name": item["name"]}
-            board.items.append(Item(item['id'], values))
+            items = items_page.get('items', [])
+            for item in items:
+                values = {column.get('id'): column.get('text') for column in item.get('column_values', [])} | {'name': item.get('name')}
+                board.items.append(Item(item.get('id'), values))
+
+            cursor = items_page.get('cursor')
+            if not cursor:
+                return
 
     def update_column_value(self, board_id: str, item_id: str, column_id: str, json_value: str):
         """
@@ -344,9 +382,13 @@ if __name__ == '__main__':
     """
     client = MondayClient(API_KEY)
 
-    board = client.get_board(BOARD_NAME)
-    if not board:
+    board_id = client.get_board_id(BOARD_NAME)
+    if not board_id:
         raise ValueError(f'Error: \'{BOARD_NAME}\' board was not found')
+    
+    board = client.get_board(board_id)
+    if not board:
+        raise ValueError(f'Error: \'{BOARD_NAME}\' board with ID \'{board_id}\' was not found')
 
     client.get_items(board)
 
