@@ -11,9 +11,9 @@ from typing import List, Optional
 # -------------------------------
 # Constants
 # -------------------------------
-API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU1MTAzMzg5OCwiYWFpIjoxMSwidWlkIjo4MDAzMjU2MCwiaWFkIjoiMjAyNS0wOC0xNlQwMjo0NjozNy4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTE5NzE1MDQsInJnbiI6InVzZTEifQ.kCyeY5Z9nLsHedjVMCpqc8c_CBrFHtSLpCCZZddpxW4"
+API_KEY = ""
 API_URL = "https://api.monday.com/v2"
-BOARD_NAME = "Contacts Test"
+BOARD_NAME = ""
 QUERY_LIMIT = 25
 SERIES = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth", "Eleventh", "Twelfth"]
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
