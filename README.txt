@@ -8,7 +8,7 @@ Rules:
 Frequency Patterns:
 - Every Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, or Sunday
     - Can use any number of weekdays
-    - Commas, "or", and "and" are not require
+    - Commas, "or", and "and" are not required
 
 - Every Other Monday 
     - Can use any single weekday
