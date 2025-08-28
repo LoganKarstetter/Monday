@@ -11,10 +11,11 @@ from typing import List, Optional
 # -------------------------------
 # Constants
 # -------------------------------
-API_KEY = ""
+API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjU1MTAzMzg5OCwiYWFpIjoxMSwidWlkIjo4MDAzMjU2MCwiaWFkIjoiMjAyNS0wOC0xNlQwMjo0NjozNy4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTE5NzE1MDQsInJnbiI6InVzZTEifQ.kCyeY5Z9nLsHedjVMCpqc8c_CBrFHtSLpCCZZddpxW4"
 API_URL = "https://api.monday.com/v2"
-BOARD_NAME = ""
+BOARD_NAME = "Contacts Test"
 QUERY_LIMIT = 25
+SERIES = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth", "Eleventh", "Twelfth"]
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 # -------------------------------
@@ -291,20 +292,51 @@ class Scheduler():
         # Monday|Tuesday|Wednesday|...
         weekdays_pattern = '|'.join(WEEKDAYS)
 
+        # First|Second|Third|Fourth|Fifth|...
+        series_5_pattern = '|'.join(SERIES[:5])
+        series_12_pattern = '|'.join(SERIES)
+
         # Regex patterns including only valid weekdays, ignoring leading/trailing whitespace
-        nth_pattern = re.compile(rf'(First|Second|Third|Fourth|Fifth)\s+({weekdays_pattern})', re.IGNORECASE)
+        nth_day_pattern = re.compile(rf'({series_5_pattern})\s+({weekdays_pattern})', re.IGNORECASE)
+        nth_month_pattern = re.compile(rf'({series_12_pattern})\s+Month', re.IGNORECASE)
         other_pattern = re.compile(rf'Every\s+Other\s+({weekdays_pattern})', re.IGNORECASE)
         last_pattern = re.compile(rf'Every\s+Last\s+({weekdays_pattern})', re.IGNORECASE)
-        every_pattern = re.compile(rf'Every\s+({weekdays_pattern}|(,|and|or|\s*))+', re.IGNORECASE)
-        month_day_pattern = re.compile(r'([0-9]{1,2})+', re.IGNORECASE)
+        every_pattern = re.compile(rf'Every\s+({weekdays_pattern}|(,|and|or|\s*))+$', re.IGNORECASE)
+        day_pattern = re.compile(r'(\d+)', re.IGNORECASE)
 
         # Check "Every First/Second/Third/Fourth/Fifth Weekday"
-        match = nth_pattern.search(frequency)
+        match = nth_day_pattern.search(frequency)
         if match:
-            nth_map = {"First": 1, "Second": 2, "Third": 3, "Fourth": 4, "Fifth": 5}
-            n = nth_map[match.group(1).capitalize()]
+            n = series_5_pattern.index(match.group(1).capitalize()) + 1
             weekday = match.group(2)
             return Scheduler.get_next_every_nth_weekday(weekday, today, n)
+
+        # Check "Every First/Second/Third/Fourth/Fifth/... Month"
+        match = nth_month_pattern.search(frequency)
+        if match:
+            n = SERIES.index(match.group(1).capitalize()) + 1
+            if existing_date > today:
+                return existing_date
+            
+            # Check "Xth, Yth, and/or Zth"
+            matches = day_pattern.findall(frequency)
+            if matches:
+                # Get the first day, casting to int is safe because of regex
+                day = min([int(day) for day in matches])
+
+                # Set the day to a day every month has (1), skip n months forward
+                closest_date = today.replace(day=1)
+                for _ in range(n):
+                    closest_date = Scheduler.get_first_day_next_month(closest_date)
+
+                try:
+                    closest_date = closest_date.replace(day=day)
+                except ValueError:
+                    # Thrown if date.replace() tried to set a day greater than the number of days in the month
+                    # Get the last day of this month (this month isn't over, so the next_date < today doesn't apply)
+                    closest_date = Scheduler.get_first_day_next_month(closest_date) - timedelta(days=1)
+
+                return closest_date
 
         # Check "Every Other Weekday"
         match = other_pattern.search(frequency)
@@ -318,9 +350,11 @@ class Scheduler():
         match = last_pattern.search(frequency)
         if match:
             weekday = match.group(1)
+
+            # Return the closest date to today
             fourth_weekday = Scheduler.get_next_every_nth_weekday(weekday, today, 4)
             fifth_weekday = Scheduler.get_next_every_nth_weekday(weekday, today, 5)
-            return fifth_weekday if fourth_weekday.month == fifth_weekday.month else fourth_weekday
+            return min(fourth_weekday, fifth_weekday)
         
         # Check "Every Weekday, Weekday, and/or Weekday"
         match = every_pattern.search(frequency)
@@ -335,8 +369,8 @@ class Scheduler():
 
             return closest_weekday
 
-        # Check "The Xth, Yth, and Zth of the month"
-        matches = month_day_pattern.findall(frequency)
+        # Check "The Xth, Yth, and/or Zth of the month"
+        matches = day_pattern.findall(frequency)
         if matches:
             # Get the days, casting to int is safe because of regex
             days = [int(day) for day in matches]
@@ -404,9 +438,11 @@ if __name__ == '__main__':
                 print(f'Error {item_name}: \'Frequency\' is missing')
                 continue
 
-            existing_date = date.fromisoformat(item.values.get(next_time_column.id))
-            if not existing_date:
-                print(f'Error {item_name}: \'Next Time Date Added\' is missing')
+            existing_date = None
+            try:
+                existing_date = date.fromisoformat(item.values.get(next_time_column.id))
+            except ValueError:
+                print(f'Error {item_name}: \'Next Time Date Added\' has an invalid date: {existing_date}')
                 continue
 
             next_date = Scheduler.get_next_date(frequency, existing_date)
