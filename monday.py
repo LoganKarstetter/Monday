@@ -11,12 +11,12 @@ from typing import List, Optional
 # -------------------------------
 # Constants
 # -------------------------------
-API_KEY = ""
-API_URL = "https://api.monday.com/v2"
-BOARD_NAME = ""
+API_KEY = ''
+API_URL = 'https://api.monday.com/v2'
+BOARD_NAME = ''
 QUERY_LIMIT = 25
-SERIES = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth", "Eleventh", "Twelfth"]
-WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+SERIES = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth', 'Eleventh', 'Twelfth']
+WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 # -------------------------------
 # Data Models
@@ -407,12 +407,15 @@ if __name__ == '__main__':
         1. Initialize MondayClient with API_KEY.
         2. Retrieve the board named BOARD_NAME.
         3. Load all items and their column values into the board object.
-        4. Identify the 'Frequency' and 'Next Time Added To Board' columns.
+        4. Identify the 'Frequency', 'Next Time Added To Board', 'Due In X Days', and 'Due Date Added' columns.
         5. Iterate over each item:
-            a. Validate that frequency and existing next-date are available.
-            b. Calculate the next scheduled date using Scheduler.get_next_date().
+            a. Validate that the column values are available.
+            b. Calculate the new 'Next Time Added To Board' date.
             c. If the date has changed, update the column value on Monday.com.
-            d. Print the result for each item.
+            d. Print the result.
+            e. Calculate the new 'Due Date Added' by adding 'Due In X Days' to the new 'Next Time Added To Board' date.
+            f. Update the column value on Monday.com.
+            g. Print the result.
     """
     client = MondayClient(API_KEY)
 
@@ -428,30 +431,54 @@ if __name__ == '__main__':
 
     frequency_column = next((column for column in board.columns if column.title == 'Frequency'), None)
     next_time_column = next((column for column in board.columns if column.title == 'Next Time Added To Board'), None)
+    due_in_x_column = next((column for column in board.columns if column.title == 'Due In X Days'), None)
+    due_date_column = next((column for column in board.columns if column.title == 'Due Date Added'), None)
 
-    if frequency_column or not next_time_column:
+    if frequency_column and next_time_column and due_in_x_column and due_date_column:
         for item in board.items:
             item_name = item.values.get('name', 'Unknown')
 
+            # Get the 'Frequency' value
             frequency = item.values.get(frequency_column.id)
             if not frequency:
                 print(f'Error {item_name}: \'Frequency\' is missing')
                 continue
 
-            existing_date = None
+            # Get the 'Next Time Added To Board' value
             try:
-                existing_date = date.fromisoformat(item.values.get(next_time_column.id))
+                next_time_added_date = date.fromisoformat(item.values.get(next_time_column.id))
             except ValueError:
-                print(f'Error {item_name}: \'Next Time Date Added\' has an invalid date: {existing_date}')
+                print(f'Error {item_name}: \'Next Time Date Added\' has an invalid date: {next_time_added_date}')
                 continue
 
-            next_date = Scheduler.get_next_date(frequency, existing_date)
+            # Get the 'Due In X Days' value
+            try:
+                due_in_x_days = int(item.values.get(due_in_x_column.id))
+            except:
+                print(f'Error {item_name}: \'Due In X Days\' has a non-numerical value: {item.values.get(due_in_x_column.id)}')
+                continue
+
+            # Get the 'Due Date Added' value
+            try:
+                due_date_added_date = date.fromisoformat(item.values.get(due_date_column.id))
+            except:
+                due_date_added_date = None
+
+            # Calculate the new 'Next Time Added To Board' value
+            next_date = Scheduler.get_next_date(frequency, next_time_added_date)
             if not next_date:
                 print(f'Error {item_name}: \'Frequency\' does not match supported patterns: {frequency}')
                 continue
 
-            if next_date != existing_date:
+            if next_date != next_time_added_date:
                 json_value = f'{{\\"date\\": \\"{next_date}\\"}}'
                 client.update_column_value(board.id, item.id, next_time_column.id, json_value)
 
-            print(f'Updated {item_name}: \'Next Time Date Added\': {existing_date.strftime("%b %d")} -> {next_date.strftime("%b %d")}')
+            print(f'Updated {item_name}: \'Next Time Date Added\': {next_time_added_date.strftime("%b %d")} -> {next_date.strftime("%b %d")}')
+
+            # Calculate the new 'Due Date Added' value
+            next_due_date = next_date + timedelta(days=due_in_x_days)
+            json_value = f'{{\\"date\\": \\"{next_due_date}\\"}}'
+            client.update_column_value(board.id, item.id, due_date_column.id, json_value)
+
+            print(f'Updated {item_name}: \'Due Date Added\': {due_date_added_date.strftime("%b %d") if due_date_added_date else 'Unknown'} -> {next_due_date.strftime("%b %d")}')
