@@ -2,10 +2,12 @@ Monday.py
 
 Rules:
 - Requires a Monday.com board with a 'Frequency', 'Next Time Added To Board', 'Due In X Days', and 'Due Date Added' column.
+- Optionally a 'Time Due' column may be added to the board.
 - The value of the 'Frequency' column must match one of the patterns described below. 
 - The value of the 'Next Time Added To Board' column must be a date.
 - The value of the 'Due In X Days' column must be a number.
 - The value of the 'Due Date Added' column can be empty or a date.
+- The value of the 'Time Due' column can be empty or a time in the following format "08:30 AM".
 
 Frequency Patterns:
 - Every Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, or Sunday
