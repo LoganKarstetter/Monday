@@ -1,12 +1,14 @@
 # -------------------------------
 # Imports
 # -------------------------------
+import os
 import re
 import requests
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 # -------------------------------
 # Constants
@@ -17,6 +19,7 @@ BOARD_NAME = ''
 QUERY_LIMIT = 25
 SERIES = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth', 'Eleventh', 'Twelfth']
 WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+LOCAL_TIMEZONE = ZoneInfo("America/Chicago")
 
 # -------------------------------
 # Data Models
@@ -417,6 +420,31 @@ if __name__ == '__main__':
             f. Update the column value on Monday.com.
             g. Print the result.
     """
+    # Try loading secrets from .env if they're not hardcoded in script
+    if not API_KEY:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            API_KEY = os.environ.get("MONDAY_API_KEY")
+        except ImportError:
+            print("Error: python-dotenv is not installed. Run `pip install python-dotenv` from command line.")
+            exit(1)
+        if not API_KEY:
+            print("Error: MONDAY_API_KEY is not set in the environment or .env file.")
+            exit(1)
+
+    if not BOARD_NAME:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            BOARD_NAME = os.environ.get("MONDAY_BOARD_NAME")
+        except ImportError:
+            print("Error: python-dotenv is not installed. Run `pip install python-dotenv` from command line.")
+            exit(1)
+        if not BOARD_NAME:
+            print("Error: MONDAY_BOARD_NAME is not set in the environment or .env file.")
+            exit(1)
+
     client = MondayClient(API_KEY)
 
     board_id = client.get_board_id(BOARD_NAME)
@@ -433,8 +461,9 @@ if __name__ == '__main__':
     next_time_column = next((column for column in board.columns if column.title == 'Next Time Added To Board'), None)
     due_in_x_column = next((column for column in board.columns if column.title == 'Due In X Days'), None)
     due_date_column = next((column for column in board.columns if column.title == 'Due Date Added'), None)
+    time_due_column = next((column for column in board.columns if column.title == 'Time Due'), None)
 
-    if frequency_column and next_time_column and due_in_x_column and due_date_column:
+    if frequency_column and next_time_column and due_in_x_column and due_date_column: # Keeping 'Time Due' column optional
         for item in board.items:
             item_name = item.values.get('name', 'Unknown')
 
@@ -478,7 +507,19 @@ if __name__ == '__main__':
 
             # Calculate the new 'Due Date Added' value
             next_due_date = next_date + timedelta(days=due_in_x_days)
-            json_value = f'{{\\"date\\": \\"{next_due_date}\\"}}'
+
+            # Calculate the 'Time Due' to add to board
+            try:
+                dt_str = f"{next_due_date} {item.values.get(time_due_column.id)}"  # e.g., '2025-09-12 08:30 AM'
+                local_dt = datetime.strptime(dt_str, "%Y-%m-%d %I:%M %p").replace(tzinfo=LOCAL_TIMEZONE)
+                utc_time_due = local_dt.astimezone(ZoneInfo("UTC")).time()
+            except Exception as e:
+                utc_time_due = None
+                
+            if utc_time_due:
+                json_value = f'{{\\"date\\": \\"{next_due_date}\\", \\"time\\": \\"{utc_time_due.strftime("%H:%M:%S")}\\"}}'
+            else:
+                json_value = f'{{\\"date\\": \\"{next_due_date}\\"}}'
             client.update_column_value(board.id, item.id, due_date_column.id, json_value)
 
             print(f'Updated {item_name}: \'Due Date Added\': {due_date_added_date.strftime("%b %d") if due_date_added_date else 'Unknown'} -> {next_due_date.strftime("%b %d")}')
